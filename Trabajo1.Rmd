@@ -1,0 +1,130 @@
+---
+title: "TrabajoSegioMateoTMAAS"
+date: "r Sys.Date()""
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Primero limpiamos el entorno y activamos las librerías y los datos
+
+```{r library, echo=TRUE, include=FALSE}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(PerformanceAnalytics)
+library(corrplot)
+
+bodegas_98<-read_xlsx("tmaas_evalua_01.xlsx",sheet="GRUPO_03")
+bodegas_98<-data.frame(bodegas_98,row.names=1)
+```
+1
+Detectar la posible existencia de missing values y outliers en la 
+variable ENDEUDA. Decir qué casos concretos se encuentran en 
+esta situación.
+```{r 1}
+bodegas_98 %>% filter(is.na(ENDEUDA)) %>% select(ENDEUDA,MATRIZ)
+ggplot(data=bodegas_98, aes(x=row.names(bodegas_98),y=ENDEUDA))+
+ geom_point()
+  
+
+```
+No encontramos ningún outlier y siete valores que faltan
+
+2
+Caracterizar gráficamente la distribución de frecuencias de 
+ENDEUDA tanto con la base de datos manteniendo los outliers, 
+como eliminándolos (los missing values sí serán eliminados, en ambos 
+casos).
+
+```{r Frecuencias}
+bodegas_muestra1<-select(bodegas_98,everything()) 
+bodegas_muestra1<-bodegas_muestra1 %>% filter(! is.na(ENDEUDA))
+
+ggplot(data = bodegas_muestra1, aes(x = ENDEUDA)) +
+ geom_histogram( color='blue', aes(fill=..count..), 
+alpha = 0.5) +
+ geom_vline(xintercept = mean(bodegas_muestra1$ENDEUDA), color = "red") +
+ geom_vline(xintercept = median(bodegas_muestra1$ENDEUDA), color = "green") +
+ xlab('Endeudamiento (%)') +
+ ylab('Frecuencias') +
+ ggtitle('Histograma Endeudamiento sin NA') + 
+ theme_grey()
+
+ggplot(data = bodegas_98, aes(x = ENDEUDA)) +
+ geom_histogram( color='blue', aes(fill=..count..), 
+alpha = 0.5) +
+ geom_vline(xintercept = mean(bodegas_98$ENDEUDA), color = "red") +
+ geom_vline(xintercept = median(bodegas_98$ENDEUDA), color = "green") +
+ xlab('Endeudamiento (%)') +
+ ylab('Frecuencias') +
+ ggtitle('Histograma Endeudamiento con NA') + 
+ theme_grey()
+
+```
+
+3 
+Caracterizar gráficamente (habiendo eliminado previamente missing 
+values y outliers) la distribución de frecuencias de ENDEUDA
+distinguiendo por forma jurídica de la empresa (FORMAJ). ¿Existen 
+diferencias apreciables en ENDEUDA entre los diferentes grupos?
+```{r formaJ}
+ggplot(data = bodegas_muestra1, aes(x=FORMAJ, y = ENDEUDA)) + 
+ geom_point(aes (group = FORMAJ, color = FORMAJ), size = 2, 
+alpha = 0.9) +
+ xlab('Empresas de la muestra') + 
+ ylab('Endeudamiento (%)') +
+ ggtitle('Endeudamiento por forma jurídica') +
+ stat_summary(fun = "mean",
+ geom = "point",
+ size = 5,
+ aes(col = FORMAJ)) +
+ theme_grey()
+
+
+
+``` 
+
+4
+Detectar la posible existencia de missing values y outliers en el caso 
+conjunto de las variables ENDEUDA, ING, EMPLEADOS y 
+ACTIVO. Decir qué casos concretos se encuentran en esta situación.
+```{r missing values conjunto}
+bodegas_98 %>% filter(is.na(ENDEUDA) | is.na(ING) | is.na(EMPLEA) | is.na(ACTIVO)) %>%
+  select(ENDEUDA,ING,EMPLEA,ACTIVO)
+bodegas_muestra2<-bodegas_98 
+bodegas_muestra2 <- bodegas_muestra2 %>% filter(! is.na(ENDEUDA) & ! is.na(ING) & ! is.na(EMPLEA) & ! is.na(ACTIVO))
+bodegas_muestra2_maha<-bodegas_muestra2
+maha_bodegas<- mahalanobis(bodegas_muestra2_maha[,c(4,5,6,9)],
+ center = colMeans(bodegas_muestra2_maha[,c(4,5,6,9)]),
+cov = cov(bodegas_muestra2_maha[,c(4,5,6,9)]))
+ggplot(data = bodegas_muestra2, aes(x = row.names(bodegas_muestra2), y = 
+maha_bodegas)) + 
+ geom_point(size = 2, alpha = 0.7, ) +
+ xlab('Empresas') + 
+ ylab('Distancia de Mahalanobis') +
+ ggtitle('DETECTANDO OUTLIERS por MAHALANOBIS') + 
+ theme(axis.text.x = element_text(angle = 90, size = 6,hjust = 1, 
+vjust = 1))
+bodegas_muestra2 %>% filter(maha_bodegas >= 10) %>% select(ENDEUDA,ING,EMPLEA,ACTIVO)
+```
+6 
+Calcular la matriz de correlaciones entre las cuatro variables, una 
+vez eliminados los missing values, tanto en el caso de eliminar los 
+outliers como en el caso de no hacerlo. ¿Qué resultados observa en 
+cuanto a la relación entre las variables? ¿Existen diferencias 
+apreciables en los resultados de ambos casos?
+```{r correlacion}
+bodegas_muestra3<-bodegas_muestra2
+bodegas_muestra3<-bodegas_muestra2 %>% filter(maha_bodegas < 10) 
+bodegas_muestra3_cor<-bodegas_muestra3 %>%  select(ENDEUDA,ING,EMPLEA,ACTIVO)
+bodegas_muestra2_cor<-bodegas_muestra2 %>%  select(ENDEUDA,ING,EMPLEA,ACTIVO)
+chart.Correlation(bodegas_muestra3_cor, histogram = F, pch = 18)
+chart.Correlation(bodegas_muestra2_cor, histogram = F, pch = 18)
+
+
+``` 
