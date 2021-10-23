@@ -1,0 +1,268 @@
+---
+title: "Ejercicio Evaluable Tema I. Análisis Exploratorio"
+author: "Bermann, M.A. & Pérez, R.S. (Grupo_03 TMAAS_MUMADE)"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r, echo = FALSE, include = FALSE}
+#Limpieza del entorno, activación de paquetes e importación de datos
+rm(list = ls())
+library(readxl)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(PerformanceAnalytics)
+library(flextable)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(PerformanceAnalytics)
+bodegas_98 <- read_excel("tmaas_evalua_01.xlsx", sheet = "GRUPO_03")
+bodegas_98 <- data.frame(bodegas_98, row.names = 1)
+```
+
+\newpage
+
+# Introducción
+
+En este informe se va a proceder a desarrollar las cuestiones planteadas en el ejercicio evaluable del Tema 1 correspondiente al programa de la asignatura Técnicas Multivariantes Aplicadas al Análisis Sectorial del Máster Universitario en Modelización y Análisis de Datos Económicos. Para ello se va a utilizar información sobre empresas bodegueras españolas con el objetivo final de poder responder a las cuestiones mencionadas.
+
+En un paso previo a comenzar el desarrollo de este informe es preciso definir las variables que forman parte de la base de datos de las 98 empresas bodegueras con las que vamos a trabajar.
+
+\begin{center}
+Tabla 1. Definición de variables
+\end{center}
+
+| Variable | Descripción |
+|----------|-------------|
+| **RENECO** | Rentabilidad económica (%) Últ. año disp. |
+| **RENFIN** | Rentabilidad financiera (%) Últ. año disp. |
+| **LIQUIDEZ**	| Liquidez general (%) Últ. año disp. |
+| **ENDEUDA**	| Endeudamiento (%) Últ. año disp. |
+| **EMPLEA**	| Número de empleados. Últ. año disp. |
+| **ACTIVO**	| Total Activo (mil EUR) Últ. año disp. |
+| **FPIOS** | Fondos propios (mil EUR) Últ. año disp. |
+| **RES**	| Resultado del ejercicio (mil EUR) Últ. año disp. |
+| **ING**	| Ingresos de explotación (mil EUR) Últ. año disp. |
+| **MARGEN**	| Margen de beneficio (%) Últ. año. disp. |
+| **SOLVENCIA**	| Coeficiente de solvencia (%) Últ. año. disp. |
+| **APALANCA**	| Apalancamiento (%) Últ. año disp. |
+| **FORMAJ**	| Forma jurídica |
+| **ACC**	| Número de accionistas |
+| **MATRIZ** | GUO - Nombre |
+
+Los datos a utilizar en este informe, se basan en información que puede ser extraída de la base de datos Sabi, la cual contiene datos sobre empresas de España y Portugal ([Bureau Van Dijk, 2021](http://www.bvdinfo.com/es-es/nuestros-productos/datos/nacional/sabi)), habiéndose personalizado dichos datos en la hoja de Excel para el GRUPO_03[^1] y habiendo para este informe un total de 98 empresas bodegueras como muestra a estudiar. Las variables con las que se trabajará serán las siguientes (ver Tabla 1).
+
+[^1]: GRUPO_03 es el nombre de la hoja del libro de Excel asignada para el informe.
+
+# 1. Análisis de _missing values_ y _outliers_ para la variable `ENDEUDA`
+
+El objetivo de este primer apartado será detectar la posible existencia de _missing values_ y _outliers_ en la base de datos utilizada para la variable endeudamiento (`ENDEUDA`), así como decir qué casos concretos se encuentran en esta situación.
+
+En primer lugar, podemos observar que existen 7 valores perdidos o _missing values_ para el caso de la variable endeudamiento (`ENDEUDA`).
+```{r, echo = FALSE}
+#detectando missing values
+bodegas_98 %>% filter(is.na(ENDEUDA)) %>% select(ENDEUDA) %>%  kable(caption = "Valores perdidos en la variable de endeudamiento (`ENDEUDA`)")
+```
+
+Por otro lado, no se han detectado posibles casos atípicos u _outliers_ para la misma variable `ENDEUDA`, hecho que se observa a través de los dos gráficos a continuación planteados.
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 5}
+#análisis gráfico de outliers 1: geom_point para detectar outliers
+ggplot(data = bodegas_98, aes(x = row.names(bodegas_98), y = ENDEUDA)) +
+  geom_point(size = 2, alpha = 0.8, colour = 'orange') +
+  xlab('Empresa') +
+  ylab('Nivel de endeudamiento (%)') + ggtitle('Endeudamiento de las empresas bodegueras') +
+  theme(axis.text.x = element_text(angle = 90, size = 6,hjust = 1, vjust = 1))
+```
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+#análisis gráfico de outliers 2: bloxplot para detectar outliers
+ggplot(data = bodegas_98, aes(y = ENDEUDA)) +
+  geom_boxplot(alpha = 0.5, fill = "orange", color = "blue") +
+  ylab('Nivel de endeudamiento (%)') +
+  ggtitle('Endeudamiento de las empresas bodegueras y posibles outliers') +
+  theme_grey()
+```
+
+# 2. Caracterización gráfica de la distribución de frecuencias de la variable de endeudamiento (`ENDEUDA`)
+
+En este segundo apartado procederemos a caracterizar gráficamente la distribución de frecuencias de la variable de endeudamiento (`ENDEUDA`), tanto con la base de datos manteniendo los _outliers_ como eliminándolos (los _missing values_ sí serán eliminados, en ambos casos).
+
+```{r, echo = FALSE}
+#creando un nuevo data.frame para poder conservar el original
+bodegas_muestra1 <- select(bodegas_98, everything())
+
+#eliminando los missing values en el nueva data.frame
+bodegas_muestra1 <- bodegas_muestra1 %>% filter(! is.na(ENDEUDA))
+```
+
+En primer lugar, a continuación, observamos, a través de un histograma, la distribución de frecuencias de la variable de endeudamiento (`ENDEUDA`) de la muestra original de datos sin haber eliminado los _missing values_ (al no existir _outliers_, tal y como se ha visto en el primer apartado, simplemente se va a distinguir entre los datos según si se incorporan los _missing values_ o no). Al existitir estos valores perdidos no es posible obtener ni la media ni la mediana. Esta información también puede analizarse a través de un gráfico de densidad que se aporta seguidamente la histograma.
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 5}
+#distribución de frecuencias (histograma) con missing values (no puede calcular media ni mediana)
+ggplot(data = bodegas_98, aes(x = ENDEUDA)) +
+  geom_histogram(color='grey', aes(fill=..count..), alpha = 0.5) +
+  geom_vline(xintercept = mean(bodegas_98$ENDEUDA), color = "orange") +
+  geom_vline(xintercept = median(bodegas_98$ENDEUDA), color = "red") +
+  xlab('Endeudamiento (%)') +
+  ylab('Frecuencias') +
+  ggtitle('Histograma Endeudamiento (con valores perdidos)') +
+  theme_light()
+```
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+ggplot(data= bodegas_98, aes(x = ENDEUDA)) +
+  geom_density(alpha = 0.4, fill = "grey") +
+  ggtitle('Grafico de densidad del Endeudamiento (con valores perdidos)') +
+  stat_function(fun = dnorm, color="orange",
+                args = list(mean = mean(bodegas_98$ENDEUDA),
+                            sd = sd(bodegas_98$ENDEUDA))) +
+  theme_light()
+```
+
+\newpage
+
+El mismo tipo de gráfico, histograma, se puede obtener, en este caso, si se trabaja sin los _missing values_, lo que nos permite además observar el valor de la media y la mediana. De igual forma se incorpora también el gráfico de densidad.
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 5}
+ggplot(data = bodegas_muestra1, aes(x = ENDEUDA)) +
+  geom_histogram(color='grey', aes(fill=..count..), alpha = 0.5) +
+  geom_vline(xintercept = mean(bodegas_muestra1$ENDEUDA), color = "orange") +
+  geom_vline(xintercept = median(bodegas_muestra1$ENDEUDA), color = "red") +
+  xlab('Endeudamiento (%)') +
+  ylab('Frecuencias') +
+  ggtitle('Histograma Endeudamiento (sin valores perdidos)') +
+  theme_light()
+```
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+ggplot(data= bodegas_muestra1, aes(x = ENDEUDA)) +
+  geom_density(alpha = 0.4, fill = "grey") +
+  ggtitle('Grafico de densidad de Endeudamiento (sin valores perdidos)') +
+  stat_function(fun = dnorm, color="orange",
+                args = list(mean = mean(bodegas_muestra1$ENDEUDA),
+                            sd = sd(bodegas_muestra1$ENDEUDA))) +
+  theme_light()
+```
+
+# 3. Caracterización de la distribución de frecuencias de la variable de endeudamiento (`ENDEUDA`) según la forma jurídica de la empresa (`FORMAJ`)
+
+En este apartado se procederá a caracterizar gráficamente (habiendo eliminado previamente los _missing values_ y _outliers_) la distribución de frecuencias de la variable de endeudamiento (`ENDEUDA`) distinguiendo por forma jurídica de la empresa (`FORMAJ`). Además se analizará si existen diferencias apreciables entre los diferentes grupos.
+
+Para realizar el análisis se ha procedido a realizar un gráfico `geom_point`, el cual revela información de interés. Parece observarse, de forma gráfica, que las empresas bodegueras con una forma jurídica basada en cooperativas presentan niveles de endeudamiento mayores que las que se agrupan en sociedades (anónimas o limitadas).
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+ggplot(data = bodegas_muestra1, aes(x=FORMAJ, y = ENDEUDA)) +
+  geom_point(aes (group = FORMAJ, color = FORMAJ), size = 2, alpha = 0.9) +
+  xlab('Empresas de la muestra') +
+  ylab('Endeudamiento (%)') +
+  ggtitle('Endeudamiento por grupos según la forma jurídica') +
+  stat_summary(fun = "mean", geom = "point", size = 5, aes(col = FORMAJ)) +
+  theme_light()
+```
+
+# 4. Análisis de _missing values_ y _outliers_ para las variables `ENDEUDA`, `ING`, `EMPLEA` y `ACTIVO`
+
+El objetivo de este cuarto apartado es detectar la posible existencia de _missing values_ y _outliers_ en la base de datos para el caso conjunto de las variables de endeudamiento (`ENDEUDA`), ingresos de explotación (`ING`), número de empleados (`EMPLEA`) y total activo (`ACTIVO`) y señalar qué casos se encuentran en esta situación.
+
+```{r, echo = FALSE, include = FALSE}
+#creando un nuevo data.frame para poder conservar el original
+bodegas_muestra2 <- select(bodegas_98, everything())
+```
+
+## 4.1. Análisis de existencia de _missing values_
+
+Podemos observar que existen, concretamente, 15 _missing values_ para el análisis conjunto de las variables de endeudamiento (`ENDEUDA`), ingresos de explotación (`ING`), número de empleados (`EMPLEA`) y total activo (`ACTIVO`), reflejado todo ello en la siguiente tabla.
+
+```{r, echo = FALSE}
+# detectando missing values
+bodegas_muestra2 %>% filter(is.na(ENDEUDA) | is.na(ING) | is.na(EMPLEA) | is.na(ACTIVO)) %>% select(ENDEUDA, ING, EMPLEA, ACTIVO) %>% kable(caption = "Valores perdidos en las variables de endeudamiento (`ENDEUDA`), ingresos de explotación (`ING`), número de empleados (`EMPLEA`) y total activo (`ACTIVO`)")
+```
+
+```{r, echo = FALSE, include = FALSE}
+#eliminando missing values en la muestra
+bodegas_muestra2 <- bodegas_muestra2 %>% filter(! is.na(ENDEUDA) & ! is.na(ING) & ! is.na(EMPLEA) & ! is.na(ACTIVO))
+```
+
+## 4.2. Análisis de existencia de _outliers_
+
+Para analizar si existen _outliers_ en la base de datos, para el conjunto de variables mencionadas (`ENDEUDA`, `ING`, `EMPLEA`, `ACTIVO`), se va a recurrir al análisis de las *distancias de _Mahalanobis_* al ser el número de variables analizadas superior a 2. Este análisis, reflejado de forma gráfica a continuación, nos muestra que habría, a primera vista, 3 casos que podrían ser claramente _outliers_.
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 5}
+#detectando outliers analizando el vector de las variables
+bodegas_muestra2_maha <- bodegas_muestra2 %>% select(ENDEUDA, ING, EMPLEA, ACTIVO)
+maha_bodegas <- mahalanobis(bodegas_muestra2_maha[,1:4], center = colMeans(bodegas_muestra2_maha[,1:4]),cov = cov(bodegas_muestra2_maha[,1:4]))
+# gráfico distancia de mahalanobis con geom_point
+ggplot(data = bodegas_muestra2, aes(x = row.names(bodegas_muestra2), y = maha_bodegas)) +
+  geom_point(size = 2, alpha = 0.7, color='orange') +
+  xlab('Empresas bodegueras') +
+  ylab('Distancia de Mahalanobis') +
+  ggtitle('Detectando outliers por Mahalanobis') +
+  theme(axis.text.x = element_text(angle = 90, size = 6,hjust = 1, vjust = 1))
+```
+
+Este análisis de las distancias de _Mahalanobis_ también puede representarse a través de un gráfico _bloxplot_ que, además, nos confirma que son varios los casos los que representan datos atípicos en la muestra de las empresas bodegueras para el conjunto de variables que se analiza (`ENDEUDA`, `ING`, `EMPLEA` y `ACTIVO`).
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+# gráfico distancias de mahalanobis con bloxplot
+ggplot(data = bodegas_muestra2, aes(y = maha_bodegas)) +
+  geom_boxplot(alpha = 0.5, fill = "orange", color = "blue") +
+  ylab('Distancias de Mahalanobis') +
+  ggtitle('Posibles outliers para el análisis conjunto de variables') +
+  theme_grey()
+```
+
+A continuación vamos a observar qué casos son los que representan datos atípicos estableciendo que cumplen esta condiciones aquellos que tienen una distancia de _Mahalanobis_ igual o superior a 10.
+```{r, echo = FALSE}
+# eliminando outliers
+bodegas_muestra2 %>% filter(maha_bodegas >= 10) %>% select(ENDEUDA, ING, EMPLEA, ACTIVO) %>% kable(capiton = "Outliers en las variables de endeudamiento (`ENDEUDA`), ingresos de explotación (`ING`), número de empleados (`EMPLEA`) y total activo (`ACTIVO`)")
+
+#nuevo vector sin los outliers
+bodegas_muestra3 <- bodegas_muestra2 %>% filter(maha_bodegas < 10)
+```
+
+# 5. Análisis de correlaciones entre las variables `ENDEUDA`, `ING`, `EMPLEA` y `ACTIVO`
+
+En este último apartado se calculará la matriz de correlaciones entre las cuatro variables analizadas en el anterior apartado (`ENDEUDA`, `ING`, `EMPLEA` y `ACTIVO`), una vez eliminados los _missing values_, tanto en el caso de eliminar los _outliers_ como en el caso de no hacerlo. También se añadirá un breve comentario sobre los resultados observados en cuanto a la relación entre las variables, así como si existen diferencias apreciables en los resultados de ambos casos.
+
+## 5.1. Análisis de correlaciones con _outliers_
+
+Comentario
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+#no eliminando outliers
+bodegas_muestra2_cor <- bodegas_muestra2 %>% select(ENDEUDA, ING, EMPLEA, ACTIVO)
+chart.Correlation(bodegas_muestra2_cor, histogram = F, pch = 18)
+```
+
+## 5.2. Análisis de correlaciones sin _outliers_
+
+Comentario
+
+```{r, echo = FALSE, fig.align = 'center', fig.width = 10, fig.height = 3}
+#correlaciones con eliminando outliers
+bodegas_muestra3_cor <- bodegas_muestra3 %>% select(ENDEUDA, ING, EMPLEA, ACTIVO)
+chart.Correlation(bodegas_muestra3_cor, histogram = F, pch = 18)
+```
+
+# Referencias bibliográficas
+
+Bureau Van Dijk (2020). _Sabi_. Disponible en: [https://www.bvdinfo.com/es-es/nuestros-productos/datos/nacional/sabi](https://www.bvdinfo.com/es-es/nuestros-productos/datos/nacional/sabi).  
+
+# Sesión
+
+En esta sección se recogen los datos de la sesión utilizada para elaborar este informe.
+
+```{r, echo = FALSE}
+sessionInfo()
+```
