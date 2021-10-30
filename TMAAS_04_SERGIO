@@ -1,0 +1,381 @@
+---
+title: "Ejercicio Evaluable Tema IV. Modelo de Regresión Múltiple (corte transversal)"
+author: "Bermann, M.A. & Pérez, R.S."
+lang: es
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+documentclass: article
+output:
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+# Ajustes iniciales de los chunk
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r, include = FALSE}
+# Limpieza del entorno, activación de paquetes e importación de datos
+rm(list = ls())
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(kableExtra)
+library(knitr)
+library(ggplot2)
+library(GGally)
+library(car)
+comercializadoras <- read_excel("tmaas_evalua_04.xlsx", sheet = "GRUPO_03")
+comercializadoras <- data.frame(comercializadoras, row.names = 1)
+```
+
+\newpage
+
+# Introducción
+
+En este informe[^1] se va a proceder a desarrollar las cuestiones planteadas en el ejercicio evaluable del Tema 4 correspondiente al programa de la asignatura Técnicas Multivariantes Aplicadas al Análisis Sectorial del Máster Universitario en Modelización y Análisis de Datos Económicos (MUMADE). Para ello se va a utilizar información sobre **empresas comercializadoras de textil** españolas con el objetivo final de poder responder a las cuestiones mencionadas.
+
+En un paso previo a comenzar el desarrollo de este informe es preciso **definir las variables**[^2] que forman parte de la base de datos de las ``r count(comercializadoras)`` empresas comercializadoras textiles con las que vamos a trabajar.
+
+```{r}
+# Creación de la tabla que define las variables
+
+definiciones <- read_excel("tmaas_evalua_04.xlsx", sheet = "Variables")
+
+# Eliminación de filas sin datos o que deben corregirse
+definiciones <- definiciones[-c(8,17,18), ]
+
+# Creación del data.frame que incorporará la nueva fila
+solvencia <- data.frame("SOLVENCIA", "Coeficiente de solvencia (%) Últ. año. disp.")
+
+# Descripción de los datos incorporados en la nueva fila
+names(solvencia) <- c("Variable", "Descripción")
+
+# Incorporación de la nueva fila
+definiciones <- rbind(definiciones, solvencia)
+
+# Creación de una tabla
+definiciones %>% 
+  kable(booktabs = TRUE, 
+        format = "latex",
+        caption = "Definición de variables") %>%
+  kable_styling(font_size = 8,
+                latex_options = c("striped", "condensed", "hold_position"), 
+                position = "center", 
+                full_width = FALSE) %>% 
+  column_spec(1, bold = T, color = "black") %>% 
+  column_spec(2, width = "30em")
+```
+
+Los datos a utilizar en este informe se basan en información que puede ser extraída de la base de datos Sabi, la cual contiene datos sobre empresas de España y Portugal [@BVD2021], habiéndose personalizado dichos datos en la hoja de Excel para el GRUPO_03[^3] y habiendo para este informe, tal y como se ha mencionado anteriormente, un total de ``r count(comercializadoras)`` empresas como muestra a estudiar.
+
+[^1]: Para la elaboración de este informe se ha utilizado el software R, a través de su entorno RStudio y generándose la maquetación vía R Markdown. Se han utilizado numerosas fuentes para el maquetado a partir de ayudas de @Allaire2021, @Cano2021, @CRANR-Project2021, @DataCamp2021a, @Keyes2019, @Kobi2010, @Luque2019, @Luque2019b, @VanHespen2016, @Xie2021, @Xie2021a y @Zhu2019.
+
+[^2]: Cabe decir que en el archivo original Microsoft&reg; Excel&reg; viene definida la variable `GCORP` en la hoja de "Variables", pero en la hoja de datos "GRUPO_03" no aparece como variable. En cambio sí aparece en dicha hoja "GRUPO_03" la variable `SOLVENCIA`. Es por ello por lo que se ha eliminado de la tabla de definición de variables `GCORP` y se ha incorporado `SOLVENCIA`.
+
+[^3]: GRUPO_03 es el nombre de la hoja del libro de Excel asignada para el informe.
+
+A continuación se ha procedido a seleccionar la variable del resultado del ejercicio (`RES`) como variable métrica dependiente y la rentabilidad económica (`RENECO`), la rentabilidad financiera (`RENFIN`), el número de empleados (`EMP`) y la forma jurídica (`FJUR`) como variables explicativas, donde una de ellas tiene carácter de factor (`FJUR`), con el **objetivo final de construir un modelo** donde el conjunto de explicativas sean un reflejo del comportamiento de la dependiente. Así, el modelo inicial planteado para trabajar es el siguiente:
+
+\begin{center}
+$RES = f(RENECO, RENFIN, EMP, FJUR)$
+\end{center}
+
+Los principales datos estadísticos de las variables explicativas seleccionadas son los siguientes:
+
+```{r}
+# Selección de las variables explicativas
+explicativas <- select(comercializadoras, RENECO, RENFIN, EMP, FJUR)
+
+# Creación de una tabla con las variables explicativas
+explicativas %>% 
+  summary() %>% 
+  kable(booktabs = TRUE, 
+        format = "latex",
+        caption = "Datos estadísticos de las variables explicativas seleccionadas",
+        digits = 2) %>%
+  kable_styling(font_size = 8,
+                latex_options = c("striped", "condensed", "hold_position"), 
+                position = "center", 
+                full_width = F) %>% 
+  row_spec(0, bold = T, color = "black")
+```
+
+Dichos datos nos revelan, de forma preliminar, que **van a existir _missing values_** para la variable del número de empleados (`EMP`), así como que la variable de la forma jurídica (`FJUR`) es de tipo cualitativa al no arrojar datos estadísticos a diferencia de las demás variables seleccionadas.
+
+\newpage
+
+# 1. Análisis de posibles datos perdidos y casos atípicos en la muestra
+
+En este primer apartado se procederá a detectar y eliminar, en su caso, posibles _missing values_ y _outliers_ que pudieran distorsionar los resultados del análisis.
+
+## 1.1. Detección y tratamiento de _missing values_
+
+```{r, include = FALSE}
+# Nuevo vector para conservar el original de la muestra
+muestra_1 <- select(comercializadoras, everything())
+
+# Detección de missing values
+muestra_1 %>% 
+  filter(is.na(RES) | is.na(RENECO) | is.na(RENFIN) | is.na(EMP) | is.na(FJUR))
+```
+
+En primer lugar, el análisis de valores perdidos, tal y como habíamos adelantado en la introducción, nos ha arrojado `r muestra_1 %>% filter(is.na(RES) | is.na(RENECO) | is.na(RENFIN) | is.na(EMP) | is.na(FJUR)) %>% select(RES, RENECO, RENFIN, EMP, FJUR) %>% count()` _missing values_. Debido a la cantidad elevada que son se ha trasladado la información sobre los casos que representan dichos valores perdidos en el Anexo I.
+
+```{r, include = FALSE}
+# Eliminación de los _missing values_
+muestra_1_1 <- muestra_1 %>% filter(! is.na(RES) & ! is.na(RENECO) & ! is.na(RENFIN) & ! is.na(EMP) & ! is.na(FJUR))
+
+```
+
+Una vez eliminados los _missing values_ **la muestra ha pasado de ``r count(comercializadoras)`` observaciones a ``r count(muestra_1_1)``**.
+
+## 1.2. Detección y tratamiento de _outliers_
+
+Tras el análisis y eliminación de _missing values_ se va a proceder a determinar si existen outliers en la muestra. Siguiendo a @Tarancon2021, distinguiremos este análisis de datos atípicos según si se analiza la variable dependiente o las explicativas.
+
+### 1.2.1. _Outliers_ en la variable dependiente
+
+En primer lugar, para detectar si existen datos atípicos en la muestra para la variable dependiente, en este caso el resultado del ejercicio (`RES`), se recurrirá a un gráfico de dispersión que se muestra a continuación.
+
+```{r, fig.align = 'center', fig.height = 5, fig.width = 10}
+# Gráfico de dispersión para la detección de outliers
+muestra_1_1 %>% 
+  ggplot(aes(x = row.names(muestra_1_1), y = RES)) +
+  geom_point(size = 2, alpha = 0.8, colour = 'red4') +
+  xlab('Empresa') +
+  ylab('Resultado del ejercicio (mil EUR)') +
+  ggtitle('Resultado del ejercicio de las empresas comercializadoras textiles') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, size = 6, hjust = 1, vjust = 1))
+```
+
+El gráfico de dispersión nos ha mostrado síntomas claros de que en la muestra existen posibles casos atípicos, por lo que se va a recurrir también al análisis gráfico _boxplot_ para corroborar las "sospechas".
+
+```{r, fig.align = 'center', fig.height = 6, fig.width = 10}
+# Gráfico boxplot para la detección de outliers
+muestra_1_1 %>% 
+  ggplot(aes(y = RES)) +
+  geom_boxplot(alpha = 0.5, fill = "orange", color = "red4") +
+  ylab('Resultado del ejercicio (mil EUR)') +
+  ggtitle('Posibles outliers en el análisis del resultado del ejercicio de las empresas comercializadoras textiles') +
+  theme_minimal()
+```
+
+El análisis _boxplot_, junto al de la dispersión de frecuencias, nos confirman la **existencia clara de _outliers_**. Así, siguiendo un criterio gráfico de observación, se ha procedido a eliminar estos datos atípicos considerando aquellos que su Resultado del Ejercicio (`RES`) tiene un valor superior e inferior a 150 y que se reflejan en la siguiente tabla.
+
+```{r}
+# Detección de outliers en la variable RES
+muestra_1_1 %>% 
+  filter(RES >= 150 | RES <= -150) %>% 
+  select(RES) %>% 
+  kable(booktabs = TRUE, 
+        format = "latex",
+        caption = "Casos atípicos omitidos en la muestra para la variable RES",
+        digits = 2) %>%
+  kable_styling(font_size = 7,
+                latex_options = c("striped", "condensed", "hold_position"), 
+                position = "center", 
+                full_width = F) %>% 
+  row_spec(0, bold = T, color = "black")
+
+# Eliminación de outliers en la variable RES
+muestra_1_2 <- muestra_1_1 %>% 
+  filter(RES < 150 & RES > -150)
+```
+
+### 1.2.2. _Outliers_ en las variables explicativas
+
+Tras el análisis de la variable dependiente, es también relevante determinar si existen casos atípicos en las variables explicativas, para lo que, al haber varias variables, se recurrirá al análisis de la _distancia de Mahalanobis_ que, siguiendo a @Tarancon2021, es como un _resumen del comportamiento de cada caso en todas las variables explicativas conjuntamente_. Recordemos que este análisis, por el momento, solo procede a las variables cuantitativas (`FJUR` es una variable de tipo factor), por lo que se aplicará a las variables explicativas `RENECO`, `RENFIN` y `EMP`.
+
+```{r, fig.align = 'center', fig.height = 5, fig.width = 10}
+# Creación del vector de la distancia de Mahalanobis
+muestra_1_2_distancias_maha <- mahalanobis(muestra_1_2[,c(11,12,15)],
+                                           center = colMeans(muestra_1_2[,c(11,12,15)]),
+                                           cov = cov(muestra_1_2[,c(11,12,15)]))
+
+# Gráfica de la distancia de Mahalanobis
+muestra_1_2 %>% 
+  ggplot(aes(x = row.names(muestra_1_2), y = muestra_1_2_distancias_maha)) +
+  geom_point(size = 2, alpha = 0.7, color = 'red4') +
+  xlab('Empresa') + 
+  ylab('Distancia de Mahalanobis') +
+  ggtitle('Detección de outliers por Mahalanobis') +
+  theme(axis.text.x = element_text(angle = 90, size = 6,hjust = 1, vjust = 1)) + 
+  theme_minimal()
+```
+
+El análisis nos arroja la posibilidad de que existan diversos _outliers_ para las 3 variables explicativas analizadas, hecho que se confirma, a continuación, con el análisis gráfico _boxplot_.
+
+```{r, fig.align = 'center', fig.height = 5, fig.width = 10}
+# Detectando outliers
+muestra_1_2 %>% 
+  ggplot(aes(y = muestra_1_2_distancias_maha)) +
+  geom_boxplot(alpha = 0.5, fill = "orange", color = "red4") +
+  ylab('Distancia de Mahalanobis') +
+  ggtitle('Posibles outliers para el análisis conjunto de variables explicativas') +
+  theme_minimal()
+```
+
+Siguiendo un criterio gráfico de observación, se ha procedido a **eliminar estos datos atípicos** considerando aquellos que tienen un valor superior a 15 y que se reflejan en la siguiente tabla.
+
+```{r}
+muestra_1_2 %>% 
+  filter(muestra_1_2_distancias_maha >= 15) %>% 
+  select(RENECO, RENFIN, EMP) %>% 
+  kable(booktabs = TRUE, 
+        format = "latex",
+        caption = "Casos atípicos omitidos en la muestra para las variables RENECO, RENFIN y EMP",
+        digits = 2) %>%
+  kable_styling(font_size = 8,
+                latex_options = c("striped", "condensed", "hold_position"), 
+                position = "center", 
+                full_width = F) %>% 
+  row_spec(0, bold = T, color = "black")
+
+# Eliminando los outliers
+muestra_1_3 <- muestra_1_2 %>%
+  filter(muestra_1_2_distancias_maha < 15)
+```
+
+### 1.2.3. Variable explicativa factor (`FJUR`)
+
+Previamente a seguir trabajando con el informe es necesario considerar que en la especificación del modelo de regresión múltiple se pretende incorporar la forma jurídica de la empresa (`FJUR`), que es una variable de tipo factor, como variable explicativa. Tal y como señala @Tarancon2021, es necesario que **R reconozca dicha variable como un "verdadero factor"**, el cual queda definido con las siguientes 2 categorías o niveles:
+
+```{r}
+# Transformando el data.frame en factor
+muestra_1_3$FJUR <- as.factor(muestra_1_3$FJUR)
+
+# Mostrando los niveles de la variable FJUR
+muestra_1_3$FJUR %>% 
+  levels() %>% 
+  kable(col.names = 'FJUR',
+        booktabs = TRUE, 
+        format = "latex",
+        caption = 'Tipos de formas jurídicas') %>%
+  kable_styling(font_size = 8,
+                latex_options = c("striped", "condensed", "hold_position"), 
+                position = "center", 
+                full_width = T) %>% 
+  row_spec(0, bold = T, color = "black")
+```
+
+\newpage
+
+# 2. Análisis de problemas de multicolinealidad
+
+En este segundo apartado, a través de las correlaciones entre las variables explicativas, se procederá a explicar razonadamente si hay alguna(s) variable(s) explicativa(s) que pudieran originar un problema de multicolinealidad en la estimación por mínimos cuadrados ordinarios (MCO) del modelo planteado.
+
+Hay que tener en cuenta que el análisis de posibles problemas de multicolinealidad es fundamental como paso previo a la especificación y estimación del modelo. Para ello se analizará si las correlaciones son altas.
+
+```{r, fig.align = 'center', fig.height = 5, fig.width = 10}
+muestra_1_3_cor <- muestra_1_3 %>%
+  select(RENECO, RENFIN, EMP, FJUR)
+ggpairs(muestra_1_3_cor,
+        title = "Análisis de correlaciones",
+        mapping = ggplot2::aes(colour = "red4"))
+```
+
+Este análisis de correlaciones arroja que **no existen correlaciones significativas** entre las variables explicativas, por lo que se procederá a seguir con el siguiente apartado. Lo que sí cabe mencionar es los resultados del análisis gráfico de la variable de la forma jurídica (`FJUR`), los cuales no arrojan valores de correlación al ser una variable de tipo factor.
+
+\newpage
+
+# 3. Análisis del modelo y mejora
+
+En esta sección se realizará, si es posible, un proceso de mejora del modelo inicial y se comentará razonadamente el por qué se ha elegido el modelo final del proceso de mejora.
+
+## 3.1. Modelo inicial de partida
+
+Recordemos que el modelo inicial de partida planteado era el siguiente:
+
+\begin{center}
+$RES = f(RENECO, RENFIN, EMP, FJUR)$
+\end{center}
+
+Así, una vez especificado el modelo, se procederá a su estimación a traves de **mínimos cuadrados ordinarios (MCO)**
+
+\newpage
+
+# 4. Análisis gráfico
+
+A continuación, se va a construir el gráfico variable dependiente real/estimada y el gráfico de los residuos del modelo final estimado, comentándolos sucintamente.
+
+\newpage
+
+# 5. Contraste: forma funcional
+
+En este quinto apartado se procederá al contraste en el modelo final del cumplimiento de la hipótesis de forma funcional correcta de las relaciones planteadas en el modelo.
+
+\newpage
+
+# 6. Contraste: normalidad del vector de perturbaciones aleatorias
+
+A continuación se procederá a contrastar en el modelo final el cumplimiento de la hipótesis de normalidad del vector de perturbaciones aleatorias.
+
+\newpage
+
+# 7. Contraste: homocedasticidad del vector de perturbaciones aleatorias
+
+Como último análisis de contraste, en este séptimo apartado, se va a contrastar en el modelo final el cumplimiento de la hipótesis de homoscedasticidad del vector de perturbaciones aleatorias.
+
+\newpage
+
+# 8. Sentido económico del modelo final
+
+En este octavo, y último apartado, se procederá a interpretar el significado económico de los coeficientes obtenidos en el modelo final.
+
+\newpage
+
+# Referencias bibliográficas
+
+<div id="refs"></div>
+
+\newpage
+
+# Anexos
+
+## Anexo 1. Valores perdidos en la muestra inicial
+
+A continuación se presentan los datos de las empresas que contienen _missing values_ del total de la muestra de las ``r count(comercializadoras)`` empresas comercializadoras textiles inicialmente importadas para su análisis.
+
+```{r}
+#Valores perdidos de la muestra inicial
+muestra_1 %>% 
+  filter(is.na(RES) | is.na(RENECO) | is.na(RENFIN) | is.na(EMP) | is.na(FJUR)) %>% 
+  select(RES, RENECO, RENFIN, EMP, FJUR) %>% 
+  kable(booktabs = TRUE,
+        format = "latex",
+        digits = 2,
+        longtable=TRUE,
+        caption = "Localización de valores perdidos en las variables seleccionadas para el modelo de regresión múltiple") %>%  
+  kable_styling(font_size = 5,
+                latex_options = c("striped", 
+                                  "hold_position", 
+                                  "repeat_header", 
+                                  "consensed"), 
+                full_width = F,
+                position = "center",
+                repeat_header_text = "continuaci\\'on",
+                repeat_header_continued= "contin\\'ua en la siguiente p\\'agina")
+```
+
+\newpage
+
+## Anexo 2. Código (_script_) utilizado
+
+A continuación se presenta el _script_ utilizado para desarrollar el informe.
+
+```{r, echo = FALSE, comment= '', width = 10}
+script <- readLines("TMAAS_04.Rmd")
+print(script)
+```
+
+\newpage
+
+## Anexo 3. Datos de la sesión
+
+En esta sección se recogen los datos de la sesión utilizada para elaborar este informe. Siguiendo a @Cano2021, es fundamental observar la versión de R, así como las versiones de los paquetes bajo los cuales se ha ejecutado el código o _script_.
+
+```{r, echo = FALSE, comment = ''}
+sessionInfo()
+```
